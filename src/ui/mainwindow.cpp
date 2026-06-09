@@ -36,6 +36,11 @@ namespace {
 
 constexpr int MaxHistorySamples = 180;
 
+QColor themedColor(bool dark, const char *light, const char *darkColor)
+{
+    return QColor(dark ? darkColor : light);
+}
+
 QScrollArea *wrapSidePanel(QWidget *content, int minWidth, int maxWidth)
 {
     QScrollArea *area = new QScrollArea();
@@ -48,12 +53,12 @@ QScrollArea *wrapSidePanel(QWidget *content, int minWidth, int maxWidth)
     return area;
 }
 
-void drawLegendItem(QPainter &painter, int x, int y, const QColor &color, const QString &text)
+void drawLegendItem(QPainter &painter, int x, int y, const QColor &color, const QString &text, const QColor &textColor)
 {
     painter.setPen(Qt::NoPen);
     painter.setBrush(color);
     painter.drawRoundedRect(QRect(x, y + 5, 18, 4), 2, 2);
-    painter.setPen(QColor("#334155"));
+    painter.setPen(textColor);
     painter.drawText(x + 26, y + 12, text);
 }
 
@@ -146,18 +151,31 @@ void ChartWidget::setOptions(bool showVoltage,
     update();
 }
 
+void ChartWidget::setDarkMode(bool dark)
+{
+    m_darkMode = dark;
+    update();
+}
+
 void ChartWidget::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(rect(), QColor("#f8fafc"));
+    const QColor page = themedColor(m_darkMode, "#f8fafc", "#101827");
+    const QColor cardBg = themedColor(m_darkMode, "#ffffff", "#182235");
+    const QColor border = themedColor(m_darkMode, "#d8dee8", "#2b3b52");
+    const QColor text = themedColor(m_darkMode, "#0f172a", "#e5edf7");
+    const QColor muted = themedColor(m_darkMode, "#64748b", "#9aa8ba");
+    const QColor grid = themedColor(m_darkMode, "#e2e8f0", "#29384d");
+    const QColor axis = themedColor(m_darkMode, "#94a3b8", "#718096");
+    painter.fillRect(rect(), page);
 
     const QRect card = rect().adjusted(0, 0, -1, -1);
-    painter.setPen(QColor("#d8dee8"));
-    painter.setBrush(QColor("#ffffff"));
+    painter.setPen(border);
+    painter.setBrush(cardBg);
     painter.drawRoundedRect(card, 8, 8);
 
-    painter.setPen(QColor("#0f172a"));
+    painter.setPen(text);
     QFont titleFont = painter.font();
     titleFont.setBold(true);
     titleFont.setPointSize(9);
@@ -168,17 +186,17 @@ void ChartWidget::paintEvent(QPaintEvent *)
     normalFont.setBold(false);
     normalFont.setPointSize(8);
     painter.setFont(normalFont);
-    painter.setPen(QColor("#64748b"));
+    painter.setPen(muted);
     painter.drawText(18, 46, QStringLiteral("电压 / 电流 / 温度 / 电量均按各自上限归一到 0-100%"));
 
-    drawLegendItem(painter, 18, 58, QColor("#2563eb"), QStringLiteral("电压"));
-    drawLegendItem(painter, 92, 58, QColor("#16a34a"), QStringLiteral("电流"));
-    drawLegendItem(painter, 166, 58, QColor("#dc2626"), QStringLiteral("温度"));
-    drawLegendItem(painter, 240, 58, QColor("#7c3aed"), QStringLiteral("电量"));
+    drawLegendItem(painter, 18, 58, QColor("#2563eb"), QStringLiteral("电压"), text);
+    drawLegendItem(painter, 92, 58, QColor("#16a34a"), QStringLiteral("电流"), text);
+    drawLegendItem(painter, 166, 58, QColor("#dc2626"), QStringLiteral("温度"), text);
+    drawLegendItem(painter, 240, 58, QColor("#7c3aed"), QStringLiteral("电量"), text);
 
     const double maxValue = m_normalized ? 100.0 : maxRawValue(m_samples);
     const QRectF area = plotArea();
-    painter.setPen(QColor("#e2e8f0"));
+    painter.setPen(grid);
     for (int i = 0; i <= 4; ++i) {
         const double y = area.top() + area.height() * i / 4.0;
         painter.drawLine(QPointF(area.left(), y), QPointF(area.right(), y));
@@ -188,20 +206,20 @@ void ChartWidget::paintEvent(QPaintEvent *)
         painter.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()));
     }
 
-    painter.setPen(QColor("#94a3b8"));
+    painter.setPen(axis);
     painter.drawText(8, static_cast<int>(area.top() + 4), m_normalized ? "100%" : QString::number(maxValue, 'f', 0));
     painter.drawText(14, static_cast<int>(area.bottom()), "0%");
     painter.drawLine(area.bottomLeft(), area.bottomRight());
     painter.drawLine(area.bottomLeft(), area.topLeft());
 
     if (m_samples.size() < 2) {
-        painter.setPen(QColor("#64748b"));
+        painter.setPen(muted);
         painter.drawText(area, Qt::AlignCenter, QStringLiteral("等待查询数据"));
         return;
     }
 
     if (m_showThresholds && m_normalized) {
-        painter.setPen(QPen(QColor("#94a3b8"), 1, Qt::DashLine));
+        painter.setPen(QPen(axis, 1, Qt::DashLine));
         painter.drawLine(QPointF(area.left(), area.top()), QPointF(area.right(), area.top()));
     }
     if (m_showVoltage) {
@@ -280,20 +298,34 @@ void DashboardWidget::setSessions(const QVector<SessionRecord> &sessions)
     update();
 }
 
+void DashboardWidget::setDarkMode(bool dark)
+{
+    m_darkMode = dark;
+    update();
+}
+
 void DashboardWidget::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(rect(), QColor("#f8fafc"));
-    painter.setPen(QColor("#d8dee8"));
-    painter.setBrush(QColor("#ffffff"));
+    const QColor page = themedColor(m_darkMode, "#f8fafc", "#101827");
+    const QColor cardBg = themedColor(m_darkMode, "#ffffff", "#182235");
+    const QColor border = themedColor(m_darkMode, "#d8dee8", "#2b3b52");
+    const QColor text = themedColor(m_darkMode, "#0f172a", "#e5edf7");
+    const QColor muted = themedColor(m_darkMode, "#64748b", "#9aa8ba");
+    const QColor grid = themedColor(m_darkMode, "#e2e8f0", "#29384d");
+    const QColor nodeIdle = themedColor(m_darkMode, "#f8fafc", "#202c42");
+    const QColor nodeActive = themedColor(m_darkMode, "#dbeafe", "#17305f");
+    painter.fillRect(rect(), page);
+    painter.setPen(border);
+    painter.setBrush(cardBg);
     painter.drawRoundedRect(rect().adjusted(1, 1, -2, -2), 8, 8);
 
     QFont title = painter.font();
     title.setBold(true);
     title.setPointSize(10);
     painter.setFont(title);
-    painter.setPen(QColor("#0f172a"));
+    painter.setPen(text);
     painter.drawText(18, 28, QStringLiteral("充电流程状态图"));
 
     const QStringList nodes = {QStringLiteral("未插枪"), QStringLiteral("已插枪"), QStringLiteral("等待刷卡"),
@@ -314,25 +346,25 @@ void DashboardWidget::paintEvent(QPaintEvent *)
     for (int i = 0; i < nodes.size(); ++i) {
         const int x = 18 + i * (nodeW + 8);
         if (i > 0) {
-            painter.setPen(QPen(QColor("#94a3b8"), 1.2));
+            painter.setPen(QPen(themedColor(m_darkMode, "#94a3b8", "#607089"), 1.2));
             painter.drawLine(x - 8, nodeY + 20, x, nodeY + 20);
         }
-        painter.setPen(QColor(i == active ? "#2563eb" : "#cbd5e1"));
-        painter.setBrush(i == active ? QColor("#dbeafe") : QColor("#f8fafc"));
+        painter.setPen(i == active ? QColor("#2563eb") : border);
+        painter.setBrush(i == active ? nodeActive : nodeIdle);
         painter.drawRoundedRect(QRect(x, nodeY, nodeW, 40), 8, 8);
-        painter.setPen(i == active ? QColor("#1d4ed8") : QColor("#334155"));
+        painter.setPen(i == active ? QColor("#6ea8fe") : text);
         painter.drawText(QRect(x, nodeY, nodeW, 40), Qt::AlignCenter, nodes[i]);
     }
 
-    painter.setPen(QColor("#0f172a"));
+    painter.setPen(text);
     painter.drawText(18, 138, QStringLiteral("安全裕量仪表"));
-    auto drawMargin = [&painter](int x, int y, const QString &name, const QString &unit, int value, int limit) {
+    auto drawMargin = [&painter, muted, border, nodeIdle](int x, int y, const QString &name, const QString &unit, int value, int limit) {
         const double ratio = qBound(0.0, value / safeLimit(limit), 1.0);
         const QColor color = value < 0 ? QColor("#dc2626") : (ratio < 0.10 ? QColor("#f59e0b") : QColor("#16a34a"));
-        painter.setPen(QColor("#475569"));
+        painter.setPen(muted);
         painter.drawText(x, y - 6, QString("%1余量 %2%3").arg(name).arg(value).arg(unit));
-        painter.setPen(QColor("#cbd5e1"));
-        painter.setBrush(QColor("#eef2f7"));
+        painter.setPen(border);
+        painter.setBrush(nodeIdle);
         painter.drawRoundedRect(QRect(x, y, 190, 14), 7, 7);
         painter.setPen(Qt::NoPen);
         painter.setBrush(color);
@@ -342,13 +374,13 @@ void DashboardWidget::paintEvent(QPaintEvent *)
     drawMargin(240, 164, QStringLiteral("电流"), QStringLiteral("A"), m_snapshot.currentLimit - m_snapshot.current, m_snapshot.currentLimit);
     drawMargin(456, 164, QStringLiteral("温度"), QStringLiteral("°C"), m_snapshot.temperatureLimit - m_snapshot.temperature, m_snapshot.temperatureLimit);
 
-    painter.setPen(QColor("#0f172a"));
+    painter.setPen(text);
     painter.drawText(18, 228, QStringLiteral("最近会话电量对比"));
     const QRect chart(24, 250, width() - 48, qMax(70, height() - 270));
-    painter.setPen(QColor("#e2e8f0"));
+    painter.setPen(grid);
     painter.drawRect(chart);
     if (m_sessions.isEmpty()) {
-        painter.setPen(QColor("#64748b"));
+        painter.setPen(muted);
         painter.drawText(chart, Qt::AlignCenter, QStringLiteral("暂无会话记录"));
         return;
     }
@@ -367,7 +399,7 @@ void DashboardWidget::paintEvent(QPaintEvent *)
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor("#2563eb"));
         painter.drawRoundedRect(QRect(x, y, barW, h), 5, 5);
-        painter.setPen(QColor("#334155"));
+        painter.setPen(text);
         painter.drawText(QRect(x - 4, chart.bottom() - 16, barW + 8, 14), Qt::AlignCenter, QString::number(energy));
     }
 }
@@ -385,44 +417,55 @@ void FrameVisualWidget::setFrame(const Transport::BusLogEntry &entry)
     update();
 }
 
+void FrameVisualWidget::setDarkMode(bool dark)
+{
+    m_darkMode = dark;
+    update();
+}
+
 void FrameVisualWidget::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(rect(), QColor("#f8fafc"));
-    painter.setPen(QColor("#d8dee8"));
-    painter.setBrush(QColor("#ffffff"));
+    const QColor page = themedColor(m_darkMode, "#f8fafc", "#101827");
+    const QColor cardBg = themedColor(m_darkMode, "#ffffff", "#182235");
+    const QColor border = themedColor(m_darkMode, "#d8dee8", "#2b3b52");
+    const QColor text = themedColor(m_darkMode, "#0f172a", "#e5edf7");
+    const QColor muted = themedColor(m_darkMode, "#64748b", "#9aa8ba");
+    painter.fillRect(rect(), page);
+    painter.setPen(border);
+    painter.setBrush(cardBg);
     painter.drawRoundedRect(rect().adjusted(1, 1, -2, -2), 8, 8);
-    painter.setPen(QColor("#0f172a"));
+    painter.setPen(text);
     QFont title = painter.font();
     title.setBold(true);
     painter.setFont(title);
     painter.drawText(16, 26, QStringLiteral("Modbus 帧结构可视化"));
     if (!m_hasFrame || m_entry.payload.size() < 4) {
-        painter.setPen(QColor("#64748b"));
+        painter.setPen(muted);
         painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("暂无有效帧"));
         return;
     }
     struct Part { QString name; QByteArray bytes; QColor color; };
     const QByteArray raw = m_entry.payload;
     const QVector<Part> parts = {
-        {QStringLiteral("地址"), raw.left(1), QColor("#dbeafe")},
-        {QStringLiteral("功能码"), raw.mid(1, 1), QColor("#dcfce7")},
-        {QStringLiteral("数据区"), raw.mid(2, raw.size() - 4), QColor("#fef3c7")},
-        {QStringLiteral("CRC低"), raw.mid(raw.size() - 2, 1), QColor("#ede9fe")},
-        {QStringLiteral("CRC高"), raw.right(1), QColor("#ede9fe")}
+        {QStringLiteral("地址"), raw.left(1), themedColor(m_darkMode, "#dbeafe", "#17305f")},
+        {QStringLiteral("功能码"), raw.mid(1, 1), themedColor(m_darkMode, "#dcfce7", "#123f2b")},
+        {QStringLiteral("数据区"), raw.mid(2, raw.size() - 4), themedColor(m_darkMode, "#fef3c7", "#493816")},
+        {QStringLiteral("CRC低"), raw.mid(raw.size() - 2, 1), themedColor(m_darkMode, "#ede9fe", "#30285f")},
+        {QStringLiteral("CRC高"), raw.right(1), themedColor(m_darkMode, "#ede9fe", "#30285f")}
     };
     int x = 16;
     const int y = 58;
     const int h = 58;
     for (const Part &part : parts) {
         const int w = qBound(74, 16 + part.bytes.size() * 28, 210);
-        painter.setPen(QColor("#cbd5e1"));
+        painter.setPen(border);
         painter.setBrush(part.color);
         painter.drawRoundedRect(QRect(x, y, w, h), 7, 7);
-        painter.setPen(QColor("#0f172a"));
+        painter.setPen(text);
         painter.drawText(QRect(x + 6, y + 8, w - 12, 16), Qt::AlignCenter, part.name);
-        painter.setPen(QColor("#334155"));
+        painter.setPen(muted);
         painter.drawText(QRect(x + 6, y + 29, w - 12, 20), Qt::AlignCenter, Core::toHex(part.bytes));
         x += w + 8;
     }
@@ -473,10 +516,15 @@ MainWindow::MainWindow(QWidget *parent)
     m_linkModeLabel = new QLabel(QStringLiteral("虚拟链路"));
     m_linkModeLabel->setObjectName("statusPill");
     m_linkModeLabel->setAlignment(Qt::AlignCenter);
+    m_themeButton = commandButton(QStringLiteral("深色"));
+    m_themeButton->setObjectName("themeButton");
+    m_themeButton->setCheckable(true);
+    installHelpText(m_themeButton, QStringLiteral("切换浅色/深色界面"));
     top->addLayout(titleBlock);
     top->addStretch();
     top->addWidget(m_linkModeLabel);
     top->addWidget(m_statusLabel);
+    top->addWidget(m_themeButton);
     root->addWidget(header);
 
     QSplitter *splitter = new QSplitter(Qt::Horizontal, central);
@@ -493,6 +541,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(&m_timer, &QTimer::timeout, this, &MainWindow::refreshUi);
     connect(&m_bus, &Transport::VirtualBus::frameLogged, this, &MainWindow::updateLog);
+    connect(m_themeButton, &QPushButton::clicked, this, &MainWindow::toggleTheme);
     m_timer.start(500);
 }
 
@@ -520,34 +569,93 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 
 void MainWindow::applyTheme()
 {
-    qApp->setStyleSheet(QStringLiteral(R"(
-        QWidget { font-family: "Microsoft YaHei UI"; font-size: 9pt; }
-        QWidget#central { background: #eef3f8; color: #0f172a; }
-        QFrame#header { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; }
-        QLabel#title { font-size: 14pt; font-weight: 700; color: #0f172a; }
-        QLabel#subtitle { color: #64748b; }
-        QLabel#statusPill { min-width: 88px; padding: 4px 8px; color: #075985; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 7px; font-weight: 600; }
-        QLabel#panelTitle { font-size: 9pt; font-weight: 700; color: #0f172a; padding: 0 0 4px 0; }
-        QLabel { font-size: 9pt; }
-        QGroupBox { background: #ffffff; border: 1px solid #d8dee8; border-radius: 8px; margin-top: 9px; padding: 10px 9px 9px 9px; font-size: 9pt; font-weight: 650; }
-        QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; color: #334155; background: #ffffff; }
-        QLineEdit, QSpinBox { min-height: 22px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; padding: 1px 7px; selection-background-color: #2563eb; font-size: 9pt; }
-        QLineEdit:focus, QSpinBox:focus { border: 1px solid #2563eb; }
-        QPushButton { min-height: 23px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; padding: 2px 8px; font-size: 9pt; font-weight: 600; }
-        QPushButton:hover { background: #f8fafc; border-color: #94a3b8; }
+    const QString page = m_darkMode ? "#101827" : "#eef3f8";
+    const QString surface = m_darkMode ? "#182235" : "#ffffff";
+    const QString surfaceAlt = m_darkMode ? "#202c42" : "#f8fafc";
+    const QString border = m_darkMode ? "#2b3b52" : "#d8dee8";
+    const QString text = m_darkMode ? "#e5edf7" : "#0f172a";
+    const QString muted = m_darkMode ? "#9aa8ba" : "#64748b";
+    const QString field = m_darkMode ? "#111c2f" : "#ffffff";
+    const QString focus = m_darkMode ? "#60a5fa" : "#2563eb";
+    const QString pillBg = m_darkMode ? "#14304b" : "#e0f2fe";
+    const QString pillText = m_darkMode ? "#bae6fd" : "#075985";
+    const QString dangerBg = m_darkMode ? "#3a1720" : "#fff1f2";
+    const QString dangerText = m_darkMode ? "#fecdd3" : "#b91c1c";
+    const QString logBg = m_darkMode ? "#08111f" : "#0f172a";
+    const QString logText = m_darkMode ? "#bfdbfe" : "#dbeafe";
+
+    QString style = QStringLiteral(R"(
+        QWidget { font-family: "Microsoft YaHei UI"; font-size: 9pt; color: %1; }
+        QWidget#central { background: %2; color: %1; }
+        QFrame#header { background: %3; border: 1px solid %4; border-radius: 8px; }
+        QLabel#title { font-size: 14pt; font-weight: 700; color: %1; }
+        QLabel#subtitle { color: %5; }
+        QLabel#statusPill { min-width: 88px; padding: 4px 8px; color: %6; background: %7; border: 1px solid %4; border-radius: 7px; font-weight: 600; }
+        QLabel#panelTitle { font-size: 9pt; font-weight: 700; color: %1; padding: 0 0 4px 0; }
+        QLabel#mutedLabel { color: %5; }
+        QLabel#strongLabel { color: %1; font-weight: 700; }
+        QLabel#summaryNote { color: %5; font-size: 8pt; padding: 2px; }
+        QLabel#accentLabel { color: %9; font-size: 9pt; font-weight: 700; }
+        QLabel#okLabel { color: #16a34a; font-weight: 700; }
+        QLabel { font-size: 9pt; color: %1; }
+        QFrame#valueLine { background: transparent; border-bottom: 1px solid %4; }
+        QFrame#valueLine QLabel { border: none; background: transparent; }
+        QGroupBox { background: %3; color: %1; border: 1px solid %4; border-radius: 8px; margin-top: 9px; padding: 10px 9px 9px 9px; font-size: 9pt; font-weight: 650; }
+        QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; color: %5; background: %3; }
+        QLineEdit, QSpinBox, QComboBox { min-height: 22px; color: %1; border: 1px solid %4; border-radius: 6px; background: %8; padding: 1px 7px; selection-background-color: %9; font-size: 9pt; }
+        QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid %9; }
+        QPushButton { min-height: 23px; color: %1; border: 1px solid %4; border-radius: 6px; background: %3; padding: 2px 8px; font-size: 9pt; font-weight: 600; }
+        QPushButton:hover { background: %10; border-color: %9; }
+        QPushButton:checked, QPushButton#themeButton { color: %6; background: %7; border-color: %9; }
         QPushButton[role="primary"] { color: #ffffff; background: #2563eb; border-color: #2563eb; }
         QPushButton[role="primary"]:hover { background: #1d4ed8; }
-        QPushButton[role="danger"] { color: #b91c1c; background: #fff1f2; border-color: #fecdd3; }
-        QPushButton[role="danger"]:hover { background: #ffe4e6; }
-        QCheckBox { spacing: 6px; font-size: 9pt; }
+        QPushButton[role="danger"] { color: %11; background: %12; border-color: %4; }
+        QPushButton[role="danger"]:hover { border-color: #fb7185; }
+        QCheckBox { spacing: 6px; font-size: 9pt; color: %1; }
         QCheckBox#compactCheck { spacing: 4px; font-size: 8pt; }
         QPushButton#compactButton { min-height: 22px; padding: 1px 6px; font-size: 8pt; font-weight: 500; }
-        QComboBox#compactCombo { min-height: 24px; padding: 1px 6px; font-size: 8pt; border: 1px solid #cbd5e1; border-radius: 5px; background: #ffffff; }
-        QProgressBar { height: 13px; border: 1px solid #cbd5e1; border-radius: 7px; background: #f8fafc; text-align: center; font-size: 8pt; }
+        QComboBox#compactCombo { min-height: 24px; padding: 1px 6px; font-size: 8pt; border: 1px solid %4; border-radius: 5px; background: %8; color: %1; }
+        QProgressBar { height: 13px; color: %1; border: 1px solid %4; border-radius: 7px; background: %10; text-align: center; font-size: 8pt; }
         QProgressBar::chunk { border-radius: 8px; background: #7c3aed; }
-        QPlainTextEdit { background: #0f172a; color: #dbeafe; border: 1px solid #1e293b; border-radius: 8px; padding: 5px; font-family: Consolas; font-size: 8pt; }
-        QSplitter::handle { background: #cbd5e1; width: 2px; }
-    )"));
+        QPlainTextEdit { background: %13; color: %14; border: 1px solid %4; border-radius: 8px; padding: 5px; font-family: Consolas; font-size: 8pt; }
+        QTableWidget { background: %3; alternate-background-color: %10; color: %1; gridline-color: %4; border: 1px solid %4; border-radius: 6px; }
+        QHeaderView::section { background: %10; color: %1; border: 1px solid %4; padding: 4px; }
+        QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }
+        QSplitter::handle { background: %4; width: 2px; }
+        QToolTip { color: %1; background: %3; border: 1px solid %4; padding: 5px; }
+    )");
+    style = style.arg(text)
+                .arg(page)
+                .arg(surface)
+                .arg(border)
+                .arg(muted)
+                .arg(pillText)
+                .arg(pillBg)
+                .arg(field)
+                .arg(focus)
+                .arg(surfaceAlt)
+                .arg(dangerText)
+                .arg(dangerBg)
+                .arg(logBg)
+                .arg(logText);
+    qApp->setStyleSheet(style);
+
+    if (m_themeButton) {
+        m_themeButton->setText(m_darkMode ? QStringLiteral("浅色") : QStringLiteral("深色"));
+        m_themeButton->setChecked(m_darkMode);
+    }
+    if (m_chart) {
+        m_chart->setDarkMode(m_darkMode);
+    }
+    if (m_dashboardWidget) {
+        m_dashboardWidget->setDarkMode(m_darkMode);
+    }
+}
+
+void MainWindow::toggleTheme()
+{
+    m_darkMode = !m_darkMode;
+    applyTheme();
 }
 
 QPushButton *MainWindow::commandButton(const QString &text, const QString &role)
@@ -627,7 +735,7 @@ QWidget *MainWindow::buildControllerPanel()
     m_etaLabel = valueLabel(QStringLiteral("预计"), summaryGrid, 5, 0);
     m_riskLabel = valueLabel(QStringLiteral("风险"), summaryGrid, 6, 0);
     QLabel *summaryNote = new QLabel(QStringLiteral("裕量顺序：V电压 / A电流 / T温度"));
-    summaryNote->setStyleSheet(QStringLiteral("color: #64748b; font-size: 8pt; padding: 2px;"));
+    summaryNote->setObjectName("summaryNote");
     summaryNote->setWordWrap(true);
     summaryGrid->addWidget(summaryNote, 7, 0);
     layout->addWidget(summary);
@@ -662,9 +770,9 @@ QWidget *MainWindow::buildCollectorPanel()
     state->setMaximumHeight(74);
     state->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     stateLayout->setContentsMargins(10, 6, 10, 6);
-    m_collectorStateLabel->setStyleSheet(QStringLiteral("font-size: 9pt; font-weight: 700; color: #2563eb;"));
+    m_collectorStateLabel->setObjectName("accentLabel");
     m_collectorAlarmLabel = new QLabel(QStringLiteral("正常"));
-    m_collectorAlarmLabel->setStyleSheet(QStringLiteral("font-weight: 700; color: #16a34a;"));
+    m_collectorAlarmLabel->setObjectName("okLabel");
     m_collectorAlarmLabel->setAlignment(Qt::AlignRight);
     stateLayout->addWidget(m_collectorStateLabel);
     stateLayout->addStretch();
@@ -810,12 +918,12 @@ QWidget *MainWindow::buildMonitorPanel()
         QHBoxLayout *line = new QHBoxLayout(box);
         line->setContentsMargins(0, 0, 0, 0);
         QLabel *name = new QLabel(title + QStringLiteral("："));
+        name->setObjectName("mutedLabel");
         name->setMinimumWidth(62);
-        name->setStyleSheet(QStringLiteral("color: #64748b;"));
         *valueLabel = new QLabel("-");
+        (*valueLabel)->setObjectName("strongLabel");
         (*valueLabel)->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         (*valueLabel)->setMinimumWidth(120);
-        (*valueLabel)->setStyleSheet(QStringLiteral("font-weight: 700; color: #0f172a;"));
         line->addWidget(name);
         line->addWidget(*valueLabel, 1);
         return box;
@@ -900,19 +1008,19 @@ QWidget *MainWindow::buildMonitorPanel()
 QLabel *MainWindow::valueLabel(const QString &title, QGridLayout *layout, int row, int col)
 {
     QFrame *box = new QFrame();
-    box->setStyleSheet(QStringLiteral("QFrame { background: transparent; border-bottom: 1px solid #e2e8f0; } QLabel { border: none; background: transparent; }"));
+    box->setObjectName("valueLine");
     QHBoxLayout *line = new QHBoxLayout(box);
     line->setContentsMargins(2, 3, 2, 3);
     QLabel *name = new QLabel(title + QStringLiteral("："));
+    name->setObjectName("mutedLabel");
     name->setMinimumWidth(54);
-    name->setStyleSheet(QStringLiteral("color: #64748b;"));
     QLabel *value = new QLabel("-");
+    value->setObjectName("strongLabel");
     value->setAlignment(Qt::AlignRight);
     value->setMinimumWidth(92);
     value->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     value->setWordWrap(false);
     value->setMouseTracking(true);
-    value->setStyleSheet(QStringLiteral("font-size: 9pt; font-weight: 700; color: #0f172a;"));
     box->setMouseTracking(true);
     name->setMouseTracking(true);
     line->addWidget(name);
@@ -1157,6 +1265,7 @@ void MainWindow::explainLastFrame()
     dialog.resize(760, 430);
     QVBoxLayout *layout = new QVBoxLayout(&dialog);
     FrameVisualWidget *visual = new FrameVisualWidget();
+    visual->setDarkMode(m_darkMode);
     visual->setFrame(entry);
     layout->addWidget(visual);
     QPlainTextEdit *detail = new QPlainTextEdit();
@@ -1262,6 +1371,7 @@ void MainWindow::showSessionRecords()
     dialog.resize(760, 560);
     QVBoxLayout *layout = new QVBoxLayout(&dialog);
     DashboardWidget *miniChart = new DashboardWidget();
+    miniChart->setDarkMode(m_darkMode);
     miniChart->setMaximumHeight(250);
     miniChart->setSnapshot(currentSnapshotForVisuals());
     miniChart->setSessions(m_sessionRecords);
@@ -1295,6 +1405,7 @@ void MainWindow::showVisualDashboard()
     dialog.resize(760, 520);
     QVBoxLayout *layout = new QVBoxLayout(&dialog);
     DashboardWidget *dashboard = new DashboardWidget();
+    dashboard->setDarkMode(m_darkMode);
     dashboard->setSnapshot(currentSnapshotForVisuals());
     dashboard->setSessions(m_sessionRecords);
     layout->addWidget(dashboard);

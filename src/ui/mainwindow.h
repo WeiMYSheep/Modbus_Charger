@@ -59,6 +59,7 @@ public:
                     bool showBattery,
                     bool normalized,
                     bool showThresholds);
+    void setDarkMode(bool dark);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -76,6 +77,7 @@ private:
     bool m_showBattery = true;
     bool m_normalized = true;
     bool m_showThresholds = true;
+    bool m_darkMode = false;
 };
 
 class DashboardWidget : public QWidget
@@ -85,6 +87,7 @@ public:
     explicit DashboardWidget(QWidget *parent = nullptr);
     void setSnapshot(const Services::ControllerSnapshot &snapshot);
     void setSessions(const QVector<SessionRecord> &sessions);
+    void setDarkMode(bool dark);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -92,6 +95,7 @@ protected:
 private:
     Services::ControllerSnapshot m_snapshot;
     QVector<SessionRecord> m_sessions;
+    bool m_darkMode = false;
 };
 
 class FrameVisualWidget : public QWidget
@@ -100,6 +104,7 @@ class FrameVisualWidget : public QWidget
 public:
     explicit FrameVisualWidget(QWidget *parent = nullptr);
     void setFrame(const Transport::BusLogEntry &entry);
+    void setDarkMode(bool dark);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -107,6 +112,7 @@ protected:
 private:
     Transport::BusLogEntry m_entry;
     bool m_hasFrame = false;
+    bool m_darkMode = false;
 };
 
 class MainWindow : public QMainWindow
@@ -140,6 +146,7 @@ private slots:
     void configureLink();
     void showSessionRecords();
     void showVisualDashboard();
+    void toggleTheme();
 
 private:
     QWidget *buildControllerPanel();
@@ -162,6 +169,7 @@ private:
     void installHelpText(QWidget *widget, const QString &text);
     void showHelpText(QWidget *widget, const QString &text);
 
+    bool m_darkMode = false;
     Services::CollectorService m_collector;
     Transport::VirtualBus m_bus;
     Services::ControllerService m_controller;
@@ -221,6 +229,7 @@ private:
     QLabel *m_crcOkLabel = nullptr;
     QLabel *m_lastFrameLabel = nullptr;
     ChartWidget *m_chart = nullptr;
+    QPushButton *m_themeButton = nullptr;
     DashboardWidget *m_dashboardWidget = nullptr;
     QVector<ChartSample> m_chartSamples;
     QVector<Services::ControllerSnapshot> m_snapshots;
