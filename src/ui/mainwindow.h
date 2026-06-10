@@ -152,6 +152,8 @@ private:
     QWidget *buildControllerPanel();
     QWidget *buildCollectorPanel();
     QWidget *buildMonitorPanel();
+    QWidget *buildMonitorSidePanel();
+    QWidget *buildActionBar();
     QLabel *valueLabel(const QString &title, QGridLayout *layout, int row, int col);
     QPushButton *commandButton(const QString &text, const QString &role = QString());
     void applyTheme();
