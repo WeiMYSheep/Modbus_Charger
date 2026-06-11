@@ -97,6 +97,32 @@ double plottedValue(const ChartSample &sample, double ChartSample::*valueMember,
     return (sample.*valueMember) * 100.0 / safeLimit(sample.*limitMember);
 }
 
+int expectedModbusRequestLength(const QByteArray &buffer)
+{
+    if (buffer.size() < 2) {
+        return 0;
+    }
+
+    const quint8 function = static_cast<quint8>(buffer.at(1));
+    switch (function) {
+    case Core::ReadInputRegisters:
+    case Core::WriteSingleCoil:
+        return 8;
+    case Core::WriteMultipleRegisters:
+        if (buffer.size() < 7) {
+            return 0;
+        }
+        return 9 + static_cast<unsigned char>(buffer.at(6));
+    default:
+        for (int size = 4; size <= qMin(buffer.size(), 256); ++size) {
+            if (Core::verifyCrc(buffer.left(size))) {
+                return size;
+            }
+        }
+        return 0;
+    }
+}
+
 double maxRawValue(const QVector<ChartSample> &samples)
 {
     double maxValue = 1.0;
@@ -1496,8 +1522,10 @@ void MainWindow::configureLink()
     dialog.resize(360, 180);
     QFormLayout *form = new QFormLayout(&dialog);
     QComboBox *modeCombo = new QComboBox();
-    modeCombo->addItems({QStringLiteral("虚拟链路"), QStringLiteral("真实串口")});
-    modeCombo->setCurrentIndex(m_serialMode ? 1 : 0);
+    modeCombo->addItems({QStringLiteral("虚拟链路"),
+                         QStringLiteral("真实串口（控制器端）"),
+                         QStringLiteral("真实串口（采集器端）")});
+    modeCombo->setCurrentIndex(static_cast<int>(m_linkMode));
     QComboBox *portCombo = new QComboBox();
     for (const QSerialPortInfo &info : QSerialPortInfo::availablePorts()) {
         portCombo->addItem(info.portName() + QStringLiteral(" - ") + info.description(), info.portName());
@@ -1516,13 +1544,7 @@ void MainWindow::configureLink()
         return;
     }
     if (modeCombo->currentIndex() == 0) {
-        if (m_serial.isOpen()) {
-            m_serial.close();
-        }
-        m_serialMode = false;
-        m_controller.setEndpoint(m_bus.endpoint());
-        m_linkModeLabel->setText(QStringLiteral("虚拟链路"));
-        setStatus(QStringLiteral("已切换到虚拟链路"));
+        switchToVirtualLink(QStringLiteral("已切换到虚拟链路"));
         return;
     }
     if (portCombo->count() == 0) {
@@ -1532,6 +1554,8 @@ void MainWindow::configureLink()
     if (m_serial.isOpen()) {
         m_serial.close();
     }
+    m_serialRxBuffer.clear();
+    disconnect(&m_serial, &QSerialPort::readyRead, this, &MainWindow::handleCollectorSerialReadyRead);
     m_serial.setPortName(portCombo->currentData().toString());
     m_serial.setBaudRate(baudCombo->currentText().toInt());
     m_serial.setDataBits(QSerialPort::Data8);
@@ -1542,12 +1566,21 @@ void MainWindow::configureLink()
         setStatus(QStringLiteral("串口打开失败：%1").arg(m_serial.errorString()));
         return;
     }
-    m_serialMode = true;
-    m_controller.setEndpoint(Transport::Endpoint([this](const QByteArray &payload) {
-        return exchangeSerialFrame(payload);
-    }));
-    m_linkModeLabel->setText(QStringLiteral("串口 %1").arg(m_serial.portName()));
-    setStatus(QStringLiteral("已切换到真实串口"));
+    if (modeCombo->currentIndex() == 1) {
+        m_linkMode = LinkMode::SerialController;
+        m_controller.setEndpoint(Transport::Endpoint([this](const QByteArray &payload) {
+            return exchangeSerialFrame(payload);
+        }));
+        m_linkModeLabel->setText(QStringLiteral("控制器串口 %1").arg(m_serial.portName()));
+        setStatus(QStringLiteral("已切换到真实串口控制器端"));
+        return;
+    }
+
+    m_linkMode = LinkMode::SerialCollector;
+    m_controller.setEndpoint(m_bus.endpoint());
+    connect(&m_serial, &QSerialPort::readyRead, this, &MainWindow::handleCollectorSerialReadyRead);
+    m_linkModeLabel->setText(QStringLiteral("采集器串口 %1").arg(m_serial.portName()));
+    setStatus(QStringLiteral("已切换到真实串口采集器端，等待控制器请求"));
 }
 
 void MainWindow::showSessionRecords()
@@ -1784,14 +1817,26 @@ void MainWindow::finishSession(const QString &result)
     m_hasActiveSession = false;
 }
 
+void MainWindow::switchToVirtualLink(const QString &message)
+{
+    disconnect(&m_serial, &QSerialPort::readyRead, this, &MainWindow::handleCollectorSerialReadyRead);
+    if (m_serial.isOpen()) {
+        m_serial.close();
+    }
+    m_serialRxBuffer.clear();
+    m_linkMode = LinkMode::Virtual;
+    m_controller.setEndpoint(m_bus.endpoint());
+    m_linkModeLabel->setText(QStringLiteral("虚拟链路"));
+    if (!message.isEmpty()) {
+        setStatus(message);
+    }
+}
+
 QByteArray MainWindow::exchangeSerialFrame(const QByteArray &payload)
 {
     m_bus.appendLog(QStringLiteral("TX"), payload);
     if (!m_serial.isOpen()) {
-        setStatus(QStringLiteral("诊断：串口未打开，已切回虚拟链路"));
-        m_serialMode = false;
-        m_controller.setEndpoint(m_bus.endpoint());
-        m_linkModeLabel->setText(QStringLiteral("虚拟链路"));
+        switchToVirtualLink(QStringLiteral("诊断：串口未打开，已切回虚拟链路"));
         return {};
     }
     m_serial.write(payload);
@@ -1811,6 +1856,42 @@ QByteArray MainWindow::exchangeSerialFrame(const QByteArray &payload)
         m_bus.appendLog(QStringLiteral("RX"), response);
     }
     return response;
+}
+
+void MainWindow::handleCollectorSerialReadyRead()
+{
+    if (m_linkMode != LinkMode::SerialCollector) {
+        return;
+    }
+
+    m_serialRxBuffer += m_serial.readAll();
+    if (m_serialRxBuffer.size() > 260) {
+        m_serialRxBuffer.clear();
+        setStatus(QStringLiteral("诊断：串口接收缓冲过长，已清空"));
+        return;
+    }
+
+    while (!m_serialRxBuffer.isEmpty()) {
+        const int frameLength = expectedModbusRequestLength(m_serialRxBuffer);
+        if (frameLength <= 0 || m_serialRxBuffer.size() < frameLength) {
+            return;
+        }
+
+        const QByteArray request = m_serialRxBuffer.left(frameLength);
+        m_serialRxBuffer.remove(0, frameLength);
+        m_bus.appendLog(QStringLiteral("RX"), request);
+
+        const QByteArray response = m_collector.handleRequest(request);
+        if (response.isEmpty()) {
+            continue;
+        }
+        m_serial.write(response);
+        if (!m_serial.waitForBytesWritten(200)) {
+            setStatus(QStringLiteral("串口响应发送超时"));
+            return;
+        }
+        m_bus.appendLog(QStringLiteral("TX"), response);
+    }
 }
 
 Services::ControllerSnapshot MainWindow::currentSnapshotForVisuals() const

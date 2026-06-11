@@ -52,6 +52,7 @@ signals:
 private:
     bool expectEcho(const QByteArray &response, quint8 function);
     bool parseResponse(const QByteArray &response, Core::ModbusFrame *frame);
+    bool sendStopFrame();
     void updateAlarmText();
 
     Transport::Endpoint m_endpoint;
