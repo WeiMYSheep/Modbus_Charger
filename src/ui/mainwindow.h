@@ -7,6 +7,7 @@
 #include "services/modbuslabservice.h"
 #include "transport/virtualbus.h"
 
+#include <QByteArray>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QGridLayout>
@@ -46,6 +47,12 @@ struct SessionRecord {
     int endPower = 0;
     double fee = 0.0;
     QString result;
+};
+
+enum class LinkMode {
+    Virtual,
+    SerialController,
+    SerialCollector
 };
 
 class ChartWidget : public QWidget
@@ -152,6 +159,7 @@ private slots:
     void showSessionRecords();
     void showVisualDashboard();
     void toggleTheme();
+    void handleCollectorSerialReadyRead();
 
 private:
     QWidget *buildControllerPanel();
@@ -171,6 +179,7 @@ private:
     bool validateSettings(QString *message = nullptr) const;
     void rememberSessionStart(const Services::ControllerSnapshot &snapshot);
     void finishSession(const QString &result);
+    void switchToVirtualLink(const QString &message = QString());
     QByteArray exchangeSerialFrame(const QByteArray &payload);
     Services::ControllerSnapshot currentSnapshotForVisuals() const;
     void appendHistory(const Services::ControllerSnapshot &snapshot);
@@ -187,7 +196,8 @@ private:
     Services::ModbusLabService m_labService;
     QTimer m_timer;
     QSerialPort m_serial;
-    bool m_serialMode = false;
+    LinkMode m_linkMode = LinkMode::Virtual;
+    QByteArray m_serialRxBuffer;
     QVector<SessionRecord> m_sessionRecords;
     SessionRecord m_activeSession;
     bool m_hasActiveSession = false;

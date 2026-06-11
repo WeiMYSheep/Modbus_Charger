@@ -57,8 +57,7 @@ bool ControllerService::startCharge()
 
 bool ControllerService::stopCharge()
 {
-    const QByteArray response = m_endpoint.exchange(Core::ModbusFrame::buildWriteCoil(m_address, Core::ChargeControlCoil, false));
-    if (expectEcho(response, Core::WriteSingleCoil)) {
+    if (sendStopFrame()) {
         m_snapshot.charging = false;
         m_snapshot.waitingForCard = false;
         m_snapshot.lastError.clear();
@@ -120,11 +119,15 @@ ControllerSnapshot ControllerService::pollParameters()
     }
     m_snapshot.progress = qMin(100.0, m_snapshot.batteryPower * 100.0 / qMax(1, m_snapshot.batteryPowerLimit));
     updateAlarmText();
+    QString terminalStopError;
     if (m_snapshot.charging && (m_snapshot.alarmText != "正常" || m_snapshot.progress >= 99.0)) {
+        if (!sendStopFrame()) {
+            terminalStopError = m_snapshot.lastError.isEmpty() ? QStringLiteral("自动停机帧发送失败") : m_snapshot.lastError;
+        }
         m_snapshot.charging = false;
         m_snapshot.waitingForCard = false;
     }
-    m_snapshot.lastError.clear();
+    m_snapshot.lastError = terminalStopError;
     emit snapshotChanged(m_snapshot);
     return m_snapshot;
 }
@@ -148,6 +151,12 @@ bool ControllerService::expectEcho(const QByteArray &response, quint8 function)
 {
     Core::ModbusFrame frame;
     return parseResponse(response, &frame) && frame.function() == function;
+}
+
+bool ControllerService::sendStopFrame()
+{
+    const QByteArray response = m_endpoint.exchange(Core::ModbusFrame::buildWriteCoil(m_address, Core::ChargeControlCoil, false));
+    return expectEcho(response, Core::WriteSingleCoil);
 }
 
 bool ControllerService::parseResponse(const QByteArray &response, Core::ModbusFrame *frame)

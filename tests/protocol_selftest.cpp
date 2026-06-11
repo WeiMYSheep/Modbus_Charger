@@ -56,6 +56,18 @@ int main(int argc, char *argv[])
     const int exponentialFloor = snapshot.batteryPower
                                  + qRound((snapshot.batteryPowerLimit - snapshot.batteryPower) * 0.30);
     check(laterSnapshot.batteryPower >= exponentialFloor, "exponential battery model");
+    Core::ChargingParameters &nearFull = collector.simulator().parameters();
+    nearFull.batteryPowerLimit = 200;
+    nearFull.batteryPower = 199;
+    nearFull.initialPower = 199;
+    const QByteArray stopFrame = Core::ModbusFrame::buildWriteCoil(1, Core::ChargeControlCoil, false);
+    controller.pollParameters();
+    bool autoStopFrameSent = false;
+    for (const Transport::BusLogEntry &entry : bus.log()) {
+        autoStopFrameSent = autoStopFrameSent || (entry.direction == "TX" && entry.payload == stopFrame);
+    }
+    check(!controller.snapshot().charging, "auto stop at full");
+    check(autoStopFrameSent, "auto stop frame sent");
 
     const QByteArray bad = collector.handleRequest(Core::ModbusFrame::buildReadRegisters(1, 0x000B, 2));
     Core::ModbusFrame badFrame = Core::ModbusFrame::parse(bad);
