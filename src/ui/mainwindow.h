@@ -14,6 +14,7 @@
 #include <QLineEdit>
 #include <QMainWindow>
 #include <QPlainTextEdit>
+#include <QPoint>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSerialPort>
@@ -123,6 +124,10 @@ public:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void changeEvent(QEvent *event) override;
+#if defined(Q_OS_WIN)
+    bool nativeEvent(const QByteArray &eventType, void *message, long *result) override;
+#endif
 
 private slots:
     void onStart();
@@ -154,9 +159,12 @@ private:
     QWidget *buildMonitorPanel();
     QWidget *buildMonitorSidePanel();
     QWidget *buildActionBar();
+    QWidget *buildWindowTitleBar();
     QLabel *valueLabel(const QString &title, QGridLayout *layout, int row, int col);
     QPushButton *commandButton(const QString &text, const QString &role = QString());
     void applyTheme();
+    void toggleMaximizedState();
+    void refreshWindowButtons();
     void setStatus(const QString &text);
     void updateActionHints(const Services::ControllerSnapshot &snapshot);
     QString diagnosisText(const Services::ControllerSnapshot &snapshot) const;
@@ -183,6 +191,12 @@ private:
     QVector<SessionRecord> m_sessionRecords;
     SessionRecord m_activeSession;
     bool m_hasActiveSession = false;
+    QWidget *m_windowTitleBar = nullptr;
+    QWidget *m_windowControlBox = nullptr;
+    QPushButton *m_maximizeButton = nullptr;
+    bool m_draggingWindow = false;
+    QPoint m_dragStartGlobal;
+    QPoint m_dragStartFrame;
 
     QCheckBox *m_plugCheck = nullptr;
     QLineEdit *m_cardEdit = nullptr;

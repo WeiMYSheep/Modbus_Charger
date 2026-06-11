@@ -34,6 +34,10 @@
 #include <QtMath>
 #include <QVBoxLayout>
 
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#endif
+
 namespace Ui {
 
 namespace {
@@ -531,6 +535,7 @@ MainWindow::MainWindow(QWidget *parent)
         return m_collector.handleRequest(payload);
     });
 
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     setWindowTitle(QStringLiteral("支持 Modbus-RTU 协议通信的充电系统 - Qt/C++"));
     QFont appFont(QStringLiteral("Microsoft YaHei UI"), 9);
     qApp->setFont(appFont);
@@ -542,9 +547,16 @@ MainWindow::MainWindow(QWidget *parent)
     QWidget *central = new QWidget(this);
     central->setObjectName("central");
     QVBoxLayout *root = new QVBoxLayout(central);
-    root->setContentsMargins(12, 10, 12, 12);
-    root->setSpacing(8);
-    root->addWidget(buildActionBar());
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+    root->addWidget(buildWindowTitleBar());
+
+    QWidget *workspace = new QWidget(central);
+    workspace->setObjectName("workspace");
+    QVBoxLayout *workspaceLayout = new QVBoxLayout(workspace);
+    workspaceLayout->setContentsMargins(12, 8, 12, 12);
+    workspaceLayout->setSpacing(8);
+    workspaceLayout->addWidget(buildActionBar());
 
     QFrame *header = new QFrame();
     header->setObjectName("header");
@@ -568,7 +580,7 @@ MainWindow::MainWindow(QWidget *parent)
     top->addStretch();
     top->addWidget(m_linkModeLabel);
     top->addWidget(m_statusLabel);
-    root->addWidget(header);
+    workspaceLayout->addWidget(header);
 
     QWidget *controllerPanel = buildControllerPanel();
     QScrollArea *controllerArea = wrapSidePanel(controllerPanel, 360, 460);
@@ -640,7 +652,8 @@ MainWindow::MainWindow(QWidget *parent)
     };
     connect(contentStack, &QSplitter::splitterMoved, this, clampContentStack);
     connect(body, &QSplitter::splitterMoved, this, clampContentStack);
-    root->addWidget(contentStack, 1);
+    workspaceLayout->addWidget(contentStack, 1);
+    root->addWidget(workspace, 1);
     setCentralWidget(central);
 
     connect(&m_timer, &QTimer::timeout, this, &MainWindow::refreshUi);
@@ -648,11 +661,104 @@ MainWindow::MainWindow(QWidget *parent)
     m_timer.start(500);
 }
 
+QWidget *MainWindow::buildWindowTitleBar()
+{
+    QFrame *bar = new QFrame(this);
+    bar->setObjectName("windowTitleBar");
+    bar->setFixedHeight(36);
+    bar->setMouseTracking(true);
+    bar->installEventFilter(this);
+    m_windowTitleBar = bar;
+
+    QHBoxLayout *layout = new QHBoxLayout(bar);
+    layout->setContentsMargins(12, 0, 0, 0);
+    layout->setSpacing(8);
+
+    QLabel *mark = new QLabel(QStringLiteral("MC"));
+    mark->setObjectName("windowAppMark");
+    mark->setAlignment(Qt::AlignCenter);
+    mark->setFixedSize(24, 24);
+    mark->setMouseTracking(true);
+    mark->installEventFilter(this);
+
+    QLabel *title = new QLabel(QStringLiteral("Modbus 充电系统联调台"));
+    title->setObjectName("windowTitleText");
+    title->setToolTip(windowTitle());
+    title->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    title->setMouseTracking(true);
+    title->installEventFilter(this);
+
+    m_windowControlBox = new QWidget(bar);
+    m_windowControlBox->setObjectName("windowControlBox");
+    QHBoxLayout *controls = new QHBoxLayout(m_windowControlBox);
+    controls->setContentsMargins(0, 0, 0, 0);
+    controls->setSpacing(0);
+
+    QPushButton *minimizeButton = new QPushButton(QStringLiteral("-"));
+    minimizeButton->setObjectName("windowButton");
+    minimizeButton->setToolTip(QStringLiteral("最小化"));
+    minimizeButton->setFocusPolicy(Qt::NoFocus);
+    minimizeButton->setFixedSize(46, 34);
+
+    m_maximizeButton = new QPushButton();
+    m_maximizeButton->setObjectName("windowButton");
+    m_maximizeButton->setToolTip(QStringLiteral("最大化/还原"));
+    m_maximizeButton->setFocusPolicy(Qt::NoFocus);
+    m_maximizeButton->setFixedSize(46, 34);
+
+    QPushButton *closeButton = new QPushButton(QStringLiteral("×"));
+    closeButton->setObjectName("closeWindowButton");
+    closeButton->setToolTip(QStringLiteral("关闭"));
+    closeButton->setFocusPolicy(Qt::NoFocus);
+    closeButton->setFixedSize(46, 34);
+
+    controls->addWidget(minimizeButton);
+    controls->addWidget(m_maximizeButton);
+    controls->addWidget(closeButton);
+
+    layout->addWidget(mark);
+    layout->addWidget(title);
+    layout->addWidget(m_windowControlBox);
+
+    connect(minimizeButton, &QPushButton::clicked, this, &MainWindow::showMinimized);
+    connect(m_maximizeButton, &QPushButton::clicked, this, &MainWindow::toggleMaximizedState);
+    connect(closeButton, &QPushButton::clicked, this, &MainWindow::close);
+    refreshWindowButtons();
+    return bar;
+}
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     QWidget *widget = qobject_cast<QWidget *>(watched);
     if (!widget) {
         return QMainWindow::eventFilter(watched, event);
+    }
+
+    if (widget == m_windowTitleBar || (m_windowTitleBar && m_windowTitleBar->isAncestorOf(widget))) {
+        if (event->type() == QEvent::MouseButtonDblClick) {
+            QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                toggleMaximizedState();
+                return true;
+            }
+        }
+        if (event->type() == QEvent::MouseButtonPress) {
+            QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                m_draggingWindow = true;
+                m_dragStartGlobal = mouseEvent->globalPos();
+                m_dragStartFrame = frameGeometry().topLeft();
+                return false;
+            }
+        }
+        if (event->type() == QEvent::MouseMove && m_draggingWindow && !isMaximized()) {
+            QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
+            move(m_dragStartFrame + mouseEvent->globalPos() - m_dragStartGlobal);
+            return true;
+        }
+        if (event->type() == QEvent::MouseButtonRelease) {
+            m_draggingWindow = false;
+        }
     }
 
     const QString helpText = widget->property("helpText").toString();
@@ -668,6 +774,104 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         QToolTip::hideText();
     }
     return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange) {
+        refreshWindowButtons();
+    }
+}
+
+#if defined(Q_OS_WIN)
+bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, long *result)
+{
+    Q_UNUSED(eventType);
+    MSG *msg = static_cast<MSG *>(message);
+    if (!msg || msg->message != WM_NCHITTEST) {
+        return QMainWindow::nativeEvent(eventType, message, result);
+    }
+
+    const int x = static_cast<short>(LOWORD(msg->lParam));
+    const int y = static_cast<short>(HIWORD(msg->lParam));
+    const QPoint globalPos(x, y);
+    const QPoint localPos = mapFromGlobal(globalPos);
+    const QRect windowRect = rect();
+    const int margin = 8;
+
+    const bool left = localPos.x() >= windowRect.left() && localPos.x() < windowRect.left() + margin;
+    const bool right = localPos.x() <= windowRect.right() && localPos.x() > windowRect.right() - margin;
+    const bool top = localPos.y() >= windowRect.top() && localPos.y() < windowRect.top() + margin;
+    const bool bottom = localPos.y() <= windowRect.bottom() && localPos.y() > windowRect.bottom() - margin;
+
+    if (!isMaximized()) {
+        if (top && left) {
+            *result = HTTOPLEFT;
+            return true;
+        }
+        if (top && right) {
+            *result = HTTOPRIGHT;
+            return true;
+        }
+        if (bottom && left) {
+            *result = HTBOTTOMLEFT;
+            return true;
+        }
+        if (bottom && right) {
+            *result = HTBOTTOMRIGHT;
+            return true;
+        }
+        if (left) {
+            *result = HTLEFT;
+            return true;
+        }
+        if (right) {
+            *result = HTRIGHT;
+            return true;
+        }
+        if (top) {
+            *result = HTTOP;
+            return true;
+        }
+        if (bottom) {
+            *result = HTBOTTOM;
+            return true;
+        }
+    }
+
+    if (m_windowTitleBar) {
+        const QPoint titleLocal = m_windowTitleBar->mapFromGlobal(globalPos);
+        const bool inTitleBar = m_windowTitleBar->rect().contains(titleLocal);
+        bool inControls = false;
+        if (m_windowControlBox) {
+            inControls = m_windowControlBox->rect().contains(m_windowControlBox->mapFromGlobal(globalPos));
+        }
+        if (inTitleBar && !inControls) {
+            *result = HTCAPTION;
+            return true;
+        }
+    }
+
+    return QMainWindow::nativeEvent(eventType, message, result);
+}
+#endif
+
+void MainWindow::toggleMaximizedState()
+{
+    if (isMaximized()) {
+        showNormal();
+    } else {
+        showMaximized();
+    }
+    refreshWindowButtons();
+}
+
+void MainWindow::refreshWindowButtons()
+{
+    if (m_maximizeButton) {
+        m_maximizeButton->setText(isMaximized() ? QStringLiteral("❐") : QStringLiteral("□"));
+    }
 }
 
 void MainWindow::applyTheme()
@@ -690,6 +894,14 @@ void MainWindow::applyTheme()
     QString style = QStringLiteral(R"(
         QWidget { font-family: "Microsoft YaHei UI"; font-size: 9pt; color: %1; }
         QWidget#central { background: %2; color: %1; }
+        QWidget#workspace { background: %2; color: %1; }
+        QFrame#windowTitleBar { background: %3; border-bottom: 1px solid %4; }
+        QLabel#windowAppMark { color: %6; background: %7; border: 1px solid %4; border-radius: 6px; font-size: 8pt; font-weight: 800; }
+        QLabel#windowTitleText { color: %1; font-size: 9pt; font-weight: 600; background: transparent; }
+        QWidget#windowControlBox { background: transparent; }
+        QPushButton#windowButton, QPushButton#closeWindowButton { min-width: 46px; max-width: 46px; min-height: 34px; max-height: 34px; padding: 0; border: 0; border-radius: 0; background: transparent; color: %1; font-size: 11pt; font-weight: 400; }
+        QPushButton#windowButton:hover { background: %10; border: 0; }
+        QPushButton#closeWindowButton:hover { background: #dc2626; color: #ffffff; border: 0; }
         QDialog, QMessageBox, QWidget#dialogSurface { background: %2; color: %1; }
         QFrame#header { background: %3; border: 1px solid %4; border-radius: 8px; }
         QMenuBar#workbenchMenu { background: %3; color: %1; border: 0; border-bottom: 1px solid %4; padding: 1px 6px; spacing: 2px; }
